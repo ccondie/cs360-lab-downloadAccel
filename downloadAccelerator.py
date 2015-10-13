@@ -3,6 +3,21 @@ import requests
 from requests import Request
 
 """Shared Objects"""
+class Shared:
+	def __init__(self):
+		self.chunkSem = threading.Semaphore()
+		self.dictSem = threading.Semaphore()
+		self.chunk = 0
+		self.totalChunk = 0
+		self.chunksRemain = true
+
+	def getChunk(self):
+		self.chunkSem.acquire()
+		rt = self.chunk
+		#may not be valid syntax
+		self.chunk++
+		self.chunkSem.release()
+		return rt
 
 
 
@@ -20,13 +35,23 @@ from requests import Request
 #acquire the dictionary shared variable
 	#store that string into a python dictionary at key:chunk_count
 #release the dictionary shared variable
+class Chunk(threading.Thread):
+	def __init__(self,shared):
+		print "*** initializing Chunk ***"
+		threading.Thread.__init__(self)
+		self.shared = shared
 
+	def run(self):
+		print "*** running Chunk.run ***"
+		while(self.shared.chunksRemain)
+			self.myChunk = self.shared.getChunk()
+			
 
 
 """Primary Function"""
 class Main(object):
 	def __init__(self):
-		print "*** initializing Main Object ***"
+		print "*** initializing Main ***"
 		
 
 	def run(self):
@@ -39,8 +64,8 @@ class Main(object):
 		print head.headers
 		print '\n'
 
-		print "Range 0-200: "
-		header = {'Range':'bytes=0-200', 'Accept-Encoding':'identity'}
+		print "Range 0-100: "
+		header = {'Range':'bytes=0-100', 'Accept-Encoding':'identity'}
 		url = "http://cs360.byu.edu/fall-2015/"
 		chunk = requests.get(url, headers=header)
 		print chunk.text
