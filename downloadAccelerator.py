@@ -4,6 +4,18 @@ from requests import Request
 import threading
 import argparse
 
+"""Debug Class"""
+class Debug:
+	debugState = True
+	printTol = 3
+
+	@staticmethod
+	def dprint(stringToPrint, tol):
+		if((Debug.debugState == True) and (tol >= Debug.printTol)):
+			print '\t' + str(stringToPrint)
+
+
+
 """Shared Objects"""
 class Shared:
 	def __init__(self):
@@ -31,13 +43,13 @@ class Shared:
 
 	def setState(self, newState):
 		self.stateSem.acquire()
-		print "*** SETTING chunksRemain STATE *** - " + str(newState)
+		Debug.dprint("*** SETTING chunksRemain STATE *** - " + str(newState), 3)
 		self.chunksRemain = newState
 		self.stateSem.release()
 
 	def checkState(self):
 		self.stateSem.acquire()
-		print "*** CHECKING chunksRemain STATE *** - " + str(self.chunksRemain)
+		Debug.dprint("*** CHECKING chunksRemain STATE *** - " + str(self.chunksRemain), 3)
 		rt = self.chunksRemain
 		self.stateSem.release()
 		return rt
@@ -49,7 +61,7 @@ class Shared:
 		return rt
 
 	def addChunk(self, chunk, chunkText):
-		print "*** adding chunk *** chunk:" + str(chunk)
+		Debug.dprint("*** adding chunk *** chunk:" + str(chunk), 2)
 		self.dictSem.acquire()
 		self.fileDict[chunk] = chunkText
 		if(len(self.fileDict) > self.totalChunk):
@@ -57,17 +69,19 @@ class Shared:
 		self.dictSem.release()
 
 	def compile(self):
-		print "*** RUNNING compile ***"
+		Debug.dprint("*** RUNNING compile ***", 5)
 		rt = ""
 
 		self.dictSem.acquire()
 
 		keys = self.fileDict.keys()
 
-		print "*** KEYES ***", keys
+		Debug.dprint("*** KEYES ***", 4)
+		for i in keys:
+			Debug.dprint(str(keys[i]), 4)
 
 		for i in keys:
-			print "i: " + str(i)
+			Debug.dprint("i: " + str(i), 3)
 			rt += self.fileDict[i]
 
 		self.dictSem.release()
@@ -92,18 +106,19 @@ class Shared:
 #release the dictionary shared variable
 class Chunk(threading.Thread):
 	def __init__(self,shared):
-		print "*** initializing Chunk ***"
+		Debug.dprint("*** initializing Chunk ***", 5)
 		threading.Thread.__init__(self)
 		self.shared = shared
 
 	def run(self):
-		print "*** running Chunk.run ***"
+		Debug.dprint("*** running Chunk.run ***", 4)
 		while self.shared.checkState():
-			print "currentState: " + str(self.shared.chunksRemain)
+			Debug.dprint("currentState: " + str(self.shared.chunksRemain), 2)
+
 			self.myChunk = self.shared.getChunk()
 			headerRange = str((self.myChunk * self.shared.chunkSize)) + "-" + str((((self.myChunk + 1) * self.shared.chunkSize) - 1))
 
-			print "Range " + headerRange
+			Debug.dprint("Range " + headerRange, 2)
 
 			header = {'Range': headerRange, 'Accept-Encoding':'identity'}
 			url = 'http://' + self.shared.getURL()
@@ -111,42 +126,51 @@ class Chunk(threading.Thread):
 			#print chunk.text
 			self.shared.addChunk(self.myChunk, chunk.text)
 			
+
+
+
+
 			#header = {'Range':'bytes=0-100', 'Accept-Encoding':'identity'}
 			#url = "http://cs360.byu.edu/fall-2015/"
 			#chunk = requests.get(url, headers=header)
 			#print chunk.text
+
+
+
+
+
 			
 
 
 """Primary Function"""
 class Main(object):
 	def __init__(self):
-		print "*** initializing Main ***"
+		Debug.dprint("*** initializing Main ***", 5)
 		
 	def parse_options(self):
-		print "*** RUNNING parse_options ***"
+		Debug.dprint("*** RUNNING parse_options ***", 5)
 		parser = argparse.ArgumentParser(prog='downloadAccelerator', description='A threaded http downloader', add_help=True)
 		parser.add_argument('-n', '--number', type=int, action='store', help='number of threads to create', default=10)
 		parser.add_argument('url', action='store', help='url of file to download')
 		
-
-
 		return parser.parse_args()
 
 	def run(self):
 		s = Shared()
 		args = self.parse_options()
-		print "*** results of command parse ***"
-		print args.number
-		print args.url
+
+		Debug.dprint("*** results of command parse ***", 4)
+		Debug.dprint(args.number, 3)
+		Debug.dprint(args.url, 3)
+
 		s.url = args.url
 
-		print "*** Running Main Function ***"
+		Debug.dprint("*** RUNNING Main.run ***", 5)
 		head = requests.head('http://' + args.url)
-		print "Status Code: " + str(head.status_code)
-		print "Encoding: " + str(head.encoding)
-		print "Header Content:"
-		print head.headers
+		Debug.dprint("Status Code: " + str(head.status_code), 3)
+		Debug.dprint("Encoding: " + str(head.encoding), 3)
+		Debug.dprint("Header Content:", 3)
+		Debug.dprint(head.headers, 2)
 
 		
 
@@ -180,8 +204,9 @@ class Main(object):
 
 		s.compileSem.acquire()
 
-		print "*** ABOUT to Compile ***"
-		s.compile()
+		Debug.dprint("*** ABOUT to Compile ***", 5)
+		#print s.compile()
+		Debug.dprint(s.compile(), 1)
 		
 
 #Check the URL to verify that a 200 response was acquired
