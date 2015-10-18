@@ -9,7 +9,7 @@ import time
 """Debug Class"""
 class Debug:
 	debugState = False
-	printTol = 1
+	printTol = 11
 
 	@staticmethod
 	def dprint(stringToPrint, tol):
@@ -27,9 +27,10 @@ class Shared:
 		self.urlSem = threading.Semaphore()
 		self.compileSem = threading.Semaphore(0)
 
+		self.totalByte = 0;
 		self.fileName = ""
 		self.chunk = 0
-		self.chunkSize = 1024
+		self.chunkSize = 1000000
 		self.totalChunk = 0
 		self.chunksRemain = True
 		self.url = ""
@@ -39,7 +40,8 @@ class Shared:
 		self.chunkSem.acquire()
 		rt = self.chunk
 		self.chunk = self.chunk + 1
-		if(self.chunk > self.totalChunk):
+		if(self.chunk >= self.totalChunk):
+			Debug.dprint("NO CHUNKS REMAIN", 11)
 			self.chunksRemain = False
 		self.chunkSem.release()
 		return rt
@@ -64,11 +66,16 @@ class Shared:
 		return rt
 
 	def addChunk(self, chunk, chunkText):
-		#Debug.dprint("*** adding chunk *** chunk:" + str(chunk), 2)
-		#Debug.dprint("*** chunkText: \n\n" + str(chunkText) + '\n' , 1)
+		Debug.dprint(str(chunk) + " is waiting for the dictSem", 11)
 		self.dictSem.acquire()
+
 		self.fileDict[chunk] = chunkText
-		if(len(self.fileDict) > self.totalChunk):
+
+		Debug.dprint("Added " + str(chunk) + " to dictionary", 11)
+
+		if(len(self.fileDict) >= self.totalChunk):
+			Debug.dprint("COMPILE SEM RELEASED", 11)
+
 			self.compileSem.release()
 		self.dictSem.release()
 
@@ -109,44 +116,36 @@ class Shared:
 	#store that string into a python dictionary at key:chunk_count
 #release the dictionary shared variable
 class Chunk(threading.Thread):
-	def __init__(self,shared):
+	def __init__(self,shared, myChunk):
 		Debug.dprint("*** initializing Chunk ***", 5)
 		threading.Thread.__init__(self)
 		self.shared = shared
+		self.data = ""
+		self.myChunk = myChunk;
 
 	def run(self):
-		Debug.dprint("*** running Chunk.run ***", 4)
-		while self.shared.checkState():
-			Debug.dprint("currentState: " + str(self.shared.chunksRemain), 2)
+		#self.myChunk = self.shared.getChunk()
+		headerRange = "bytes=" + str((self.myChunk * self.shared.chunkSize)) + "-" + str((((self.myChunk + 1) * self.shared.chunkSize) - 1))
 
-			self.myChunk = self.shared.getChunk()
-			headerRange = "bytes=" + str((self.myChunk * self.shared.chunkSize)) + "-" + str((((self.myChunk + 1) * self.shared.chunkSize) - 1))
+		Debug.dprint("Range " + headerRange, 3)
 
-			Debug.dprint("Range " + headerRange, 3)
+		header = {'Range': headerRange, 'Accept-Encoding':'identity'}
+		url = self.shared.getURL()
 
-			header = {'Range': headerRange, 'Accept-Encoding':'identity'}
-			url = self.shared.getURL()
-			chunk = requests.get(url, headers=header)
+		chunkTime = time.time();
+		Debug.dprint("Grabbing chunk " + str(self.myChunk), 11)
+		
+		chunk = requests.get(url, headers=header)
+		#print chunk.content[0:10]
+		self.data = chunk.content
 
-			Debug.dprint("************ chunk Size:" + str(len(chunk.text)),2)
+		chunkElapse = time.time() - chunkTime
+		Debug.dprint("\t" + str(self.myChunk) + " - " + str(chunkElapse), 11)
 
-			#print chunk.text
-			self.shared.addChunk(self.myChunk, chunk.content)
-			
-
-
-
-
-			#header = {'Range':'bytes=0-100', 'Accept-Encoding':'identity'}
-			#url = "http://cs360.byu.edu/fall-2015/"
-			#chunk = requests.get(url, headers=header)
-			#print chunk.text
+		#self.shared.addChunk(self.myChunk, chunk.content)
 
 
 
-
-
-			
 
 
 """Primary Function"""
@@ -181,16 +180,16 @@ class Main(object):
 			urlSplit = s.url.split('/')
 			s.filename = urlSplit[len(urlSplit) - 1]
 
-		print s.filename
+		#print s.filename
 
 		Debug.dprint("*** RUNNING Main.run ***", 5)
 
 		headHeader = {'Accept-Encoding':'identity'}
 
 		head = requests.head(args.url, headers=headHeader)
-		Debug.dprint("Status Code: " + str(head.status_code), 3)
-		Debug.dprint("Encoding: " + str(head.encoding), 3)
-		Debug.dprint("Header Content:", 3)
+		Debug.dprint("Status Code: " + str(head.status_code), 11)
+		Debug.dprint("Encoding: " + str(head.encoding), 11)
+		Debug.dprint("Header Content:", 11)
 		Debug.dprint(head.headers, 2)
 
 		
@@ -202,43 +201,49 @@ class Main(object):
 		#if the headers have the proper responces, determine the number of needed chunks from content-length
 		if head.status_code == 200:
 			#then create n number of threads and run
-			print "--- Correct Status Code 200 ---"
-			print 'Content-Length: ' + str(head.headers['Content-Length'])
+			#print "--- Correct Status Code 200 ---"
+			Debug.dprint('Content-Length: ' + str(head.headers['Content-Length']), 11)
+
+			s.totalByte = head.headers['Content-Length']
+
+			#this tells each thread to only grab one chunk
+			s.chunkSize = (float(s.totalByte) / args.number) + 1
+
 
 			s.totalChunk = float(head.headers['Content-Length']) / s.chunkSize
-			print 'Total Chunks Needed: ' + str(s.totalChunk)
+			Debug.dprint('Total Chunks Needed: ' + str(s.totalChunk),11)
+
+			threads = {}
 
 			for i in range(args.number):
 				#create a new thread with the thread function
-				thread = Chunk(s)
-				thread.start()
+				threadChunk = Chunk(s, i)
+				threads[i] = threadChunk
+			
+			for thread in threads.keys():
+				threads[thread].start()
+
+			for thread in threads.keys():
+				threads[thread].join()
+
+
+			outFile = open(s.filename, 'w')
+			#join all the threads together
+			for thread in threads.keys():
+				outFile.write(threads[thread].data)
+				
+			outFile.close()
+
 
 		else:
 			#if the status code is wrong then we should break
 			print "--- Something went wrong, Status Code != 200 ---"
-
-		s.compileSem.acquire()
-
-		Debug.dprint("*** ABOUT to Compile ***", 5)
-		#print s.compile()
-		#Debug.dprint(s.compile(), 1)
-
-		outFile = open(s.filename, 'w')
-		outFile.write(s.compile())
-		outFile.close()
+		
 
 		elapsedTime = time.time() - startTime
 
-		print elapsedTime
+		print s.url + " " + str(args.number) + " " + str(s.totalByte) + " " + str(elapsedTime) + '\n'
 		
-
-#Check the URL to verify that a 200 response was acquired
-
-#Capture the size of the body of the page
-
-#Calculate the number of chunks of a specified size that will need to be applied
-
-#Create the specifed number of threads and start them
 
 
 
