@@ -3,11 +3,13 @@ import requests
 from requests import Request
 import threading
 import argparse
+import time
+
 
 """Debug Class"""
 class Debug:
-	debugState = True
-	printTol = 3
+	debugState = False
+	printTol = 1
 
 	@staticmethod
 	def dprint(stringToPrint, tol):
@@ -25,6 +27,7 @@ class Shared:
 		self.urlSem = threading.Semaphore()
 		self.compileSem = threading.Semaphore(0)
 
+		self.fileName = ""
 		self.chunk = 0
 		self.chunkSize = 1024
 		self.totalChunk = 0
@@ -61,7 +64,8 @@ class Shared:
 		return rt
 
 	def addChunk(self, chunk, chunkText):
-		Debug.dprint("*** adding chunk *** chunk:" + str(chunk), 2)
+		#Debug.dprint("*** adding chunk *** chunk:" + str(chunk), 2)
+		#Debug.dprint("*** chunkText: \n\n" + str(chunkText) + '\n' , 1)
 		self.dictSem.acquire()
 		self.fileDict[chunk] = chunkText
 		if(len(self.fileDict) > self.totalChunk):
@@ -116,15 +120,18 @@ class Chunk(threading.Thread):
 			Debug.dprint("currentState: " + str(self.shared.chunksRemain), 2)
 
 			self.myChunk = self.shared.getChunk()
-			headerRange = str((self.myChunk * self.shared.chunkSize)) + "-" + str((((self.myChunk + 1) * self.shared.chunkSize) - 1))
+			headerRange = "bytes=" + str((self.myChunk * self.shared.chunkSize)) + "-" + str((((self.myChunk + 1) * self.shared.chunkSize) - 1))
 
-			Debug.dprint("Range " + headerRange, 2)
+			Debug.dprint("Range " + headerRange, 3)
 
 			header = {'Range': headerRange, 'Accept-Encoding':'identity'}
-			url = 'http://' + self.shared.getURL()
+			url = self.shared.getURL()
 			chunk = requests.get(url, headers=header)
+
+			Debug.dprint("************ chunk Size:" + str(len(chunk.text)),2)
+
 			#print chunk.text
-			self.shared.addChunk(self.myChunk, chunk.text)
+			self.shared.addChunk(self.myChunk, chunk.content)
 			
 
 
@@ -156,6 +163,8 @@ class Main(object):
 		return parser.parse_args()
 
 	def run(self):
+		startTime = time.time()
+
 		s = Shared()
 		args = self.parse_options()
 
@@ -164,9 +173,21 @@ class Main(object):
 		Debug.dprint(args.url, 3)
 
 		s.url = args.url
+		#check if the url ends in an /
+		if s.url[len(s.url) - 1] == '/':
+			s.filename = "index.html"
+		else:
+			#if not, split and grab the last element as a filename
+			urlSplit = s.url.split('/')
+			s.filename = urlSplit[len(urlSplit) - 1]
+
+		print s.filename
 
 		Debug.dprint("*** RUNNING Main.run ***", 5)
-		head = requests.head('http://' + args.url)
+
+		headHeader = {'Accept-Encoding':'identity'}
+
+		head = requests.head(args.url, headers=headHeader)
 		Debug.dprint("Status Code: " + str(head.status_code), 3)
 		Debug.dprint("Encoding: " + str(head.encoding), 3)
 		Debug.dprint("Header Content:", 3)
@@ -191,12 +212,6 @@ class Main(object):
 				#create a new thread with the thread function
 				thread = Chunk(s)
 				thread.start()
-			
-			#print '\n' + "Range 101-200: "
-			#header = {'Range':'bytes=101-200', 'Accept-Encoding':'identity'}
-			#url = "http://cs360.byu.edu/fall-2015/"
-			#chunk = requests.get(url, headers=header)
-			#print chunk.text
 
 		else:
 			#if the status code is wrong then we should break
@@ -206,7 +221,15 @@ class Main(object):
 
 		Debug.dprint("*** ABOUT to Compile ***", 5)
 		#print s.compile()
-		Debug.dprint(s.compile(), 1)
+		#Debug.dprint(s.compile(), 1)
+
+		outFile = open(s.filename, 'w')
+		outFile.write(s.compile())
+		outFile.close()
+
+		elapsedTime = time.time() - startTime
+
+		print elapsedTime
 		
 
 #Check the URL to verify that a 200 response was acquired
